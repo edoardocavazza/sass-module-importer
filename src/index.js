@@ -44,6 +44,35 @@ class ModuleImporter {
       });
   }
 
+  resolveSync({ url, prev }) {
+    const fullPath = prev === 'stdin' ? url : path.resolve(path.dirname(prev), url);
+    const extname = path.extname(fullPath);
+
+    if (extname === '.js') {
+      return { contents: '' };
+    }
+
+    if (this.aliases.has(fullPath)) {
+      return this.aliases.get(fullPath);
+    }
+
+    const dirName = path.dirname(fullPath);
+    const fileName = `?(_)${path.basename(fullPath)}.+(scss|sass|css)`;
+    const matches = glob.sync(path.join(dirName, fileName));
+
+    if (matches.length > 0) {
+      return { file: fullPath };
+    }
+
+    const p = this.npmSync({ url, prev }) || this.bowerSync({ url, prev });
+    const res = this.readSync(p);
+
+    if (res) {
+      this.aliases.set(fullPath, res);
+    }
+    return res;
+  }
+
   filter(pkg) {
     const regex = /\.s?[c|a]ss$/;
     if (!pkg.main ||
@@ -70,6 +99,14 @@ class ModuleImporter {
     });
   }
 
+  findSync(resolver, { url, prev, resolved }) {
+    if (resolved) {
+      return { url, prev, resolved };
+    }
+    const res = resolver(url, this.options);
+    return { url: (res || url), prev, resolved: !!res };
+  }
+
   read({ url, prev, resolved }) {
     return new Promise((resolve, reject) => {
       if (!resolved) {
@@ -94,12 +131,35 @@ class ModuleImporter {
     });
   }
 
+  readSync({ url, prev, resolved }) {
+    if (!resolved) {
+      return undefined;
+    }
+    if (url.match(/\.css$/)) {
+      const contents = fs.readFileSync(url, 'utf8');
+      return { contents };
+    }
+    let resolvedURL = url;
+    if (!resolved && prev && prev !== 'stdin' && !path.isAbsolute(url)) {
+      resolvedURL = path.resolve(path.dirname(prev), url);
+    }
+    return { file: resolvedURL };
+  }
+
   npm(file) {
     return this.find(npmResolve, file);
   }
 
+  npmSync(file) {
+    return this.findSync(npmResolve.sync, file);
+  }
+
   bower(file) {
     return this.find(bowerResolve, file);
+  }
+
+  bowerSync(file) {
+    return this.findSync(bowerResolve.sync, file);
   }
 }
 
@@ -110,7 +170,7 @@ class ModuleImporter {
  *
  * @return {Function}         Function to be used by node-sass importer
  */
-export default function (opts) {
+const SassModuleImporter = function (opts) {
   const importer = new ModuleImporter(opts);
 
   return (url, prev, done) => {
@@ -118,4 +178,15 @@ export default function (opts) {
       .then(done)
       .catch(err => setImmediate(() => { throw err; }));
   };
+};
+
+SassModuleImporter.sync = function (opts) {
+  opts.sync = true;
+  const importer = new ModuleImporter(opts);
+
+  return (url, prev) => {
+    return importer.resolveSync({ url, prev });
+  };
 }
+
+export default SassModuleImporter;
