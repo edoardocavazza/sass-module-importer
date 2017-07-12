@@ -18,7 +18,6 @@ Thumbs.db
 *.sublime-project
 *.sublime-workspace
 
-/lib
 /node_modules
 /bower_components
 !/fixtures/node_modules

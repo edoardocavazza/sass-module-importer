@@ -92,7 +92,7 @@ class ModuleImporter {
       if (resolved) {
         resolve({ url, prev, resolved });
       } else {
-        resolver(url, this.options, (err, res) => {
+        resolver(url.replace(/^\~\@/, '@'), this.options, (err, res) => {
           resolve({ url: (err ? url : res), prev, resolved: !err });
         });
       }
@@ -103,7 +103,17 @@ class ModuleImporter {
     if (resolved) {
       return { url, prev, resolved };
     }
-    const res = resolver(url, this.options);
+    if ((!prev || prev === 'stdin') && url.match(/(^(\.\/)|(\.\.\/))/)) {
+      return { url, prev, resolved: false };
+    }
+    let moduleUrl = url.replace(/^\~\@/, '@').split('/');
+    const moduleName = (moduleUrl[0][0] === '@' ? moduleUrl.splice(0, 2) :
+        moduleUrl.splice(0, 1)).join('/');
+    moduleUrl = moduleUrl.join('/');
+    let res = resolver(`${moduleName}/package.json`, this.options);
+    if (res && moduleUrl) {
+      res = path.join(path.dirname(res), moduleUrl);
+    }
     return { url: (res || url), prev, resolved: !!res };
   }
 
@@ -170,7 +180,7 @@ class ModuleImporter {
  *
  * @return {Function}         Function to be used by node-sass importer
  */
-const SassModuleImporter = function (opts) {
+const SassModuleImporter = function SassModuleImporter(opts) {
   const importer = new ModuleImporter(opts);
 
   return (url, prev, done) => {
@@ -180,13 +190,10 @@ const SassModuleImporter = function (opts) {
   };
 };
 
-SassModuleImporter.sync = function (opts) {
-  opts.sync = true;
+SassModuleImporter.sync = function sync(opts) {
   const importer = new ModuleImporter(opts);
 
-  return (url, prev) => {
-    return importer.resolveSync({ url, prev });
-  };
-}
+  return (url, prev) => importer.resolveSync({ url, prev });
+};
 
 export default SassModuleImporter;
